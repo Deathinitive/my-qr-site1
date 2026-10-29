@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR-генератор</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f4f4f4;
+  color: #222;
+  margin: 0;
+  padding: 20px;
+}
+
+main {
+  max-width: 400px;
+  margin: 30px auto;
+  padding: 20px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+h2 { text-align: center; }
+
+p { color: #666; }
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 20px 0;
+}
+
+button {
+  padding: 12px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background: #eee;
+  cursor: pointer;
+}
+
+.tabs button { flex: 1; }
+
+.tabs button.active,
+#make {
+  background: #333;
+  color: white;
+}
+
+textarea {
+  width: 100%;
+  height: 100px;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font: inherit;
+  resize: vertical;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+#make, #save, #choosePhoto {
+  width: 100%;
+  margin-top: 12px;
+}
+
+#save, #choosePhoto {
+  background: #e5e5e5;
+}
+
+#preview {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  margin: 15px auto;
+  object-fit: contain;
+}
+
+#result {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+#result img, #result canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+#status {
+  text-align: center;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+[hidden] {
+  display: none !important;
+}
+</style>
+</head>
+
+<body>
+<main>
+  <h2>QR-генератор</h2>
+  <p>Создай QR-код из текста, ссылки или фото.</p>
+
+  <div class="tabs">
+    <button class="active" data-mode="text">Текст</button>
+    <button data-mode="link">Ссылка</button>
+    <button data-mode="photo">Фото</button>
+  </div>
+
+  <label id="label" for="input">Введи текст:</label>
+
+  <textarea id="input"
+    placeholder="Напиши что-нибудь..."></textarea>
+
+  <input type="file" id="photo"
+    accept="image/*" hidden>
+
+  <button id="choosePhoto" hidden>
+    Выбрать фото из галереи
+  </button>
+
+  <img id="preview" hidden alt="Предпросмотр фото">
+
+  <button id="make">Создать QR-код</button>
+
+  <p id="status" role="status"></p>
+
+  <div id="result"></div>
+
+  <button id="save" hidden>Скачать QR-код</button>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<script>
+const input = document.getElementById('input');
+const photo = document.getElementById('photo');
+const preview = document.getElementById('preview');
+const choosePhoto = document.getElementById('choosePhoto');
+const result = document.getElementById('result');
+const status = document.getElementById('status');
+const save = document.getElementById('save');
+const label = document.getElementById('label');
+
+let mode = 'text';
+let photoURL = '';
+
+function clearResult() {
+  result.replaceChildren();
+  save.hidden = true;
+}
+
+document.querySelectorAll('[data-mode]').forEach(button => {
+  button.onclick = () => {
+    mode = button.dataset.mode;
+
+    document.querySelectorAll('[data-mode]').forEach(b => {
+      b.classList.toggle('active', b === button);
+    });
+
+    input.hidden = mode === 'photo';
+    choosePhoto.hidden = mode !== 'photo';
+    preview.hidden = mode !== 'photo' || !photo.files.length;
+
+    label.hidden = mode === 'photo';
+    label.textContent = mode === 'link'
+      ? 'Вставь ссылку:'
+      : 'Введи текст:';
+
+    input.value = '';
+    status.textContent = '';
+    clearResult();
+  };
+});
+
+choosePhoto.onclick = () => {
+  photo.click();
+};
+
+photo.onchange = () => {
+  const file = photo.files[0];
+
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    status.textContent = 'Выбери файл изображения.';
+    photo.value = '';
+    return;
+  }
+
+  if (photoURL) URL.revokeObjectURL(photoURL);
+
+  photoURL = URL.createObjectURL(file);
+  preview.src = photoURL;
+  preview.hidden = false;
+
+  status.textContent = 'Фото выбрано: ' + file.name;
+  clearResult();
+};
+
+document.getElementById('make').onclick = () => {
+  if (typeof QRCode === 'undefined') {
+    status.textContent =
+      'Не удалось загрузить генератор QR. Проверь интернет.';
+    return;
+  }
+
+  let value = '';
+
+  if (mode === 'photo') {
+    if (!photo.files.length) {
+      status.textContent = 'Сначала выбери фото из галереи.';
+      return;
+    }
+
+    status.textContent =
+      'Фото выбрано, но для QR нужна ссылка на него в интернете.';
+
+    return;
+  }
+
+  value = input.value.trim();
+
+  if (!value) {
+    status.textContent = 'Сначала введи текст или ссылку.';
+    return;
+  }
+
+  if (mode === 'link') {
+    try {
+      const url = new URL(value);
+
+      if (!['https:', 'http:'].includes(url.protocol)) {
+        throw new Error();
+      }
+    } catch {
+      status.textContent =
+        'Введи правильную ссылку, например https://example.com';
+      return;
+    }
+  }
+
+  clearResult();
+
+  try {
+    new QRCode(result, {
+      text: value,
+      width: 240,
+      height: 240,
+      colorDark: '#111111',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+
+    status.textContent = 'QR-код готов!';
+    save.hidden = false;
+  } catch (error) {
+    status.textContent = 'Не удалось создать QR-код.';
+  }
+};
+
+save.onclick = () => {
+  const canvas = result.querySelector('canvas');
+  const img = result.querySelector('img');
+  const a = document.createElement('a');
+
+  if (canvas) {
+    a.href = canvas.toDataURL('image/png');
+  } else if (img) {
+    a.href = img.src;
+  } else {
+    return;
+  }
+
+  a.download = 'qr-code.png';
+  a.click();
+};
+</script>
+</body>
+</html>
